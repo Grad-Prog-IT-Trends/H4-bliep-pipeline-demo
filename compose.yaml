@@ -19,10 +19,13 @@ services:
   # 1. De webshop. Deze service is VOLLEDIG: kijk hier af.
   # ------------------------------------------------------------------
   web:
-    # In deze demo bouwt de CI het image, niet de server. Komodo haalt het op uit
-    # de registry (GHCR). Welk image, zet je per stack in Komodo:
-    #   BLIEP_IMAGE=ghcr.io/<eigenaar>/bliep-web:development (of :staging, :production)
-    image: ${BLIEP_IMAGE:?zet BLIEP_IMAGE in de omgeving van de stack}
+    # Komodo bouwt het image zelf, uit de code op de branch die de stack volgt.
+    # Er is dus geen registry nodig. De korte commit gaat mee als build-argument:
+    # Komodo zet GIT_COMMIT in .env voor het bouwen (pre_deploy in komodo-resources.toml).
+    build:
+      context: ./webshop
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-lokaal}
     # Instellingen die je via een pull request wijzigt: banner, dropmodus, omgeving.
     env_file: config/bliep.env
     # Instellingen die bij deze stack horen.
@@ -31,7 +34,7 @@ services:
       # "db" is de naam van de databaseservice hieronder. Docker maakt er een hostnaam van.
       DATABASE_URL: postgres://bliep:bliep-demo@db:5432/bliep
       # Welke omgeving is dit? Komodo zet het per stack: development, staging of productie.
-      # De versie (GIT_COMMIT) zit in het image zelf: de CI bakt ze erin bij het bouwen.
+      # De versie (GIT_COMMIT) zit in het image zelf: Komodo bakt ze erin bij het bouwen.
       OMGEVING: ${BLIEP_OMGEVING:-lokaal}
     # Start de webshop pas als de database echt klaar is.
     depends_on:

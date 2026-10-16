@@ -1,0 +1,33 @@
+# CI van Bliep, voor de demo "van development naar productie".
+#
+#   pull request naar development, staging of main  ->  de tests draaien
+#   merge (push) op development, staging of main     ->  de tests draaien opnieuw
+#
+# Het uitrollen (CD) doet Komodo: dat ziet de nieuwe commit op de branch, bouwt het image
+# en start de stack opnieuw. Zet in de instellingen van de repo een branch-regel die een
+# groene CI eist voor een merge, dan komt er nooit code op een branch die niet getest is.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [development, staging, main]
+  push:
+    branches: [development, staging, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Tests van de webshop
+        working-directory: webshop
+        run: |
+          npm ci
+          npm test

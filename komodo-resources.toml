@@ -1,9 +1,12 @@
 # Komodo-resources voor de demo "van development naar productie".
-# Ingevuld voor de organisatie Grad-Prog-IT-Trends. In de image-namen staat ze in kleine
-# letters, want GHCR aanvaardt geen hoofdletters. "Local" is de naam van de eerste server
+# Ingevuld voor de organisatie Grad-Prog-IT-Trends. "Local" is de naam van de eerste server
 # in Komodo (KOMODO_FIRST_SERVER_NAME in komodo/komodo.env).
-# Gebruik je een eigen kopie van de repo, vervang dan grad-prog-it-trends door je eigen
-# GitHub-gebruiker, ook in kleine letters.
+# Gebruik je een eigen kopie van de repo, vervang dan de repo hieronder door de jouwe.
+#
+# Elke stack volgt een branch. Komodo haalt die branch op, bouwt het image van de webshop
+# zelf (run_build) en start de stack. Er is geen registry nodig.
+# Voor het bouwen schrijft pre_deploy de korte commit in .env, zodat de webshop onderaan
+# toont welke versie er draait (zie build.args in compose.yaml).
 
 [[stack]]
 name = "bliep-dev"
@@ -12,9 +15,11 @@ server = "Local"
 repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
 branch = "development"
 file_paths = ["compose.yaml"]
-auto_update = true
+run_build = true
+auto_pull = false
+pre_deploy.command = 'echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> .env'
+pre_deploy.shell_mode = true
 environment = """
-BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:development
 BLIEP_OMGEVING = development
 BLIEP_POORT = 8081
 """
@@ -26,9 +31,11 @@ server = "Local"
 repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
 branch = "staging"
 file_paths = ["compose.yaml"]
-auto_update = true
+run_build = true
+auto_pull = false
+pre_deploy.command = 'echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> .env'
+pre_deploy.shell_mode = true
 environment = """
-BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:staging
 BLIEP_OMGEVING = staging
 BLIEP_POORT = 8082
 """
@@ -40,31 +47,46 @@ server = "Local"
 repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
 branch = "main"
 file_paths = ["compose.yaml"]
-auto_update = true
+run_build = true
+auto_pull = false
+pre_deploy.command = 'echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> .env'
+pre_deploy.shell_mode = true
 environment = """
-BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:production
 BLIEP_OMGEVING = productie
 BLIEP_POORT = 8080
 """
 
-# Standaard kijkt Komodo één keer per dag naar nieuwe images. Voor een demo is dat te traag:
-# deze procedure doet het elke 30 seconden (cron met seconden, zoals Komodo dat verwacht).
-[[procedure]]
-name = "bliep-auto-update"
-description = "Elke 30 seconden: nieuwe images uitrollen, en stacks met gewijzigde bestanden in git opnieuw deployen."
-[procedure.config]
+# Het GitOps-stuk: elke 30 seconden kijkt deze Action per stack welke commit er draait en
+# wat de laatste commit op de branch is. Verschillen ze, dan rolt ze de stack opnieuw uit.
+# Een stack die nog nooit draaide, rolt ze ook uit. (Cron met seconden, zoals Komodo het verwacht.)
+[[action]]
+name = "bliep-uitrollen"
+description = "Elke 30 seconden: staat er een nieuwe commit op de branch van een bliep-stack, dan bouwen en uitrollen."
+[action.config]
 schedule_format = "Cron"
 schedule = "*/30 * * * * ?"
+schedule_enabled = true
 schedule_alert = false
+file_contents = '''
+const stacks = (await komodo.read("ListStacks", {})).filter((s) => s.name.startsWith("bliep-"));
 
-[[procedure.config.stage]]
-name = "Nieuwe images"
-executions = [
-  { execution.type = "GlobalAutoUpdate", execution.params = {}, enabled = true },
-]
+for (const stack of stacks) {
+  await komodo.write("RefreshStackCache", { stack: stack.id });
+  const { info } = await komodo.read("GetStack", { stack: stack.id });
+  const draait = info.deployed_hash;
+  const laatste = info.latest_hash;
 
-[[procedure.config.stage]]
-name = "Gewijzigde stacks"
-executions = [
-  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "bliep-*", enabled = true },
-]
+  if (!laatste || draait === laatste) {
+    console.log(`${stack.name}: niets nieuws (${draait ?? "-"})`);
+    continue;
+  }
+
+  console.log(`${stack.name}: ${draait ?? "nog niet uitgerold"} -> ${laatste}, uitrollen`);
+  try {
+    await komodo.execute_and_poll("DeployStack", { stack: stack.id });
+  } catch (fout) {
+    // Bv. omdat de stack nog bezig is met de vorige uitrol. Volgende keer opnieuw.
+    console.log(`${stack.name}: overgeslagen (${fout?.result?.error ?? fout})`);
+  }
+}
+'''
