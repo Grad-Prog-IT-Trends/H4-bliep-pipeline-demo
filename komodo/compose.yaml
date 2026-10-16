@@ -1,0 +1,77 @@
+# komodo/compose.yaml: Komodo zelf, als code. Komodo rolt daarna de drie Bliep-stacks uit.
+#
+# Gebaseerd op het officiële mongo.compose.yaml van Komodo v2.3.3
+# (https://komo.do/docs/setup/mongo), aangepast voor een laptop met Docker Desktop:
+#   - één commando, zonder --env-file: alle instellingen staan hier of in komodo.env;
+#   - een vaste versie van Komodo en MongoDB, zodat iedereen hetzelfde draait;
+#   - Komodo is alleen bereikbaar op je eigen laptop (127.0.0.1), niet op het netwerk.
+#
+# Opstarten (in de hoofdmap van de repo):  docker compose -f komodo/compose.yaml up -d
+# Inloggen:                                http://localhost:9120  (admin / bliep-demo)
+# Afbreken:                                docker compose -f komodo/compose.yaml down
+# Verwoesten:                              docker compose -f komodo/compose.yaml down -v
+#
+# Let op: Komodo stuurt Docker op je laptop aan, ook de Bliep-stacks die het uitrolt.
+# Die stop je in Komodo, of met: docker compose -p bliep-dev down (en bliep-staging, bliep-prod).
+
+name: komodo
+
+services:
+
+  # De database van Komodo: resources, gebruikers, geschiedenis.
+  mongo:
+    image: mongo:8.0
+    labels:
+      komodo.skip: # Komodo stopt deze container niet bij "StopAllContainers".
+    command: --quiet --wiredTigerCacheSizeGB 0.25
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: bliep-demo
+
+  # Komodo Core: de webinterface en de API.
+  core:
+    image: ghcr.io/moghtech/komodo-core:2.3.3
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "127.0.0.1:9120:9120"
+    env_file: ./komodo.env
+    environment:
+      KOMODO_DATABASE_ADDRESS: mongo:27017
+      KOMODO_DATABASE_USERNAME: admin
+      KOMODO_DATABASE_PASSWORD: bliep-demo
+    volumes:
+      # De sleutels waarmee Core en Periphery elkaar herkennen.
+      - keys:/config/keys
+      - backups:/backups
+
+  # Komodo Periphery: de agent die op de server docker compose uitvoert.
+  periphery:
+    image: ghcr.io/moghtech/komodo-periphery:2.3.3
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - core
+    env_file: ./komodo.env
+    volumes:
+      - keys:/config/keys
+      # Periphery stuurt de Docker van je laptop aan.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/proc
+      # Hier zet Periphery de repo's van de stacks neer. Het pad moet binnen en buiten de
+      # container gelijk zijn, want Docker zoekt de bestanden van de stacks (init.sql,
+      # Caddyfile) op de host. Met Docker Desktop is /etc/komodo een map in de Linux-VM
+      # van Docker, niet op je C-schijf. Zo werkt het op Windows, macOS en Linux.
+      - /etc/komodo:/etc/komodo
+
+volumes:
+  mongo-data:
+  mongo-config:
+  keys:
+  backups:

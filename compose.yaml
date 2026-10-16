@@ -1,0 +1,86 @@
+# compose.yaml: de volledige Bliep-omgeving, als code. Demo: van development naar productie.
+#
+# Lees dit bestand als een beschrijving van het eindresultaat: welke services er
+# draaien, met welke instellingen. Je schrijft niet hoe Docker daar moet geraken.
+# Dat is het verschil tussen declaratief (dit bestand) en imperatief (losse
+# docker run-commando's, na elkaar getikt).
+#
+# Opstarten:   Komodo doet dit voor je, per omgeving een eigen stack.
+# Bekijken:    docker compose ps
+# Afbreken:    docker compose down        (de gegevens in de database blijven)
+# Verwoesten:  docker compose down -v     (ook de gegevens zijn weg)
+
+# De naam van de stack. Alle containers, netwerken en volumes beginnen met bliep-.
+name: bliep
+
+services:
+
+  # ------------------------------------------------------------------
+  # 1. De webshop. Deze service is VOLLEDIG: kijk hier af.
+  # ------------------------------------------------------------------
+  web:
+    # In deze demo bouwt de CI het image, niet de server. Komodo haalt het op uit
+    # de registry (GHCR). Welk image, zet je per stack in Komodo:
+    #   BLIEP_IMAGE=ghcr.io/<eigenaar>/bliep-web:development (of :staging, :production)
+    image: ${BLIEP_IMAGE:?zet BLIEP_IMAGE in de omgeving van de stack}
+    # Instellingen die je via een pull request wijzigt: banner, dropmodus, omgeving.
+    env_file: config/bliep.env
+    # Instellingen die bij deze stack horen.
+    environment:
+      PORT: 3000
+      # "db" is de naam van de databaseservice hieronder. Docker maakt er een hostnaam van.
+      DATABASE_URL: postgres://bliep:bliep-demo@db:5432/bliep
+      # Welke omgeving is dit? Komodo zet het per stack: development, staging of productie.
+      # De versie (GIT_COMMIT) zit in het image zelf: de CI bakt ze erin bij het bouwen.
+      OMGEVING: ${BLIEP_OMGEVING:-lokaal}
+    # Start de webshop pas als de database echt klaar is.
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    # Hoe weet Docker of de webshop gezond is? Hij vraagt elke 5 seconden /health op.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Crasht de container, dan start Docker hem opnieuw. Behalve als jij hem stopt.
+    restart: unless-stopped
+    # Geen ports: de webshop is niet rechtstreeks bereikbaar van buitenaf.
+    # Alle verkeer loopt via de reverse proxy.
+
+  # ------------------------------------------------------------------
+  # 2. De database
+  # ------------------------------------------------------------------
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bliep
+      POSTGRES_PASSWORD: bliep-demo
+      POSTGRES_DB: bliep
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bliep", "-d", "bliep"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # 3. De reverse proxy
+  # ------------------------------------------------------------------
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      - "${BLIEP_POORT:-8080}:80"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  dbdata:

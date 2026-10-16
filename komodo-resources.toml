@@ -1,0 +1,70 @@
+# Komodo-resources voor de demo "van development naar productie".
+# Ingevuld voor de organisatie Grad-Prog-IT-Trends. In de image-namen staat ze in kleine
+# letters, want GHCR aanvaardt geen hoofdletters. "Local" is de naam van de eerste server
+# in Komodo (KOMODO_FIRST_SERVER_NAME in komodo/komodo.env).
+# Gebruik je een eigen kopie van de repo, vervang dan grad-prog-it-trends door je eigen
+# GitHub-gebruiker, ook in kleine letters.
+
+[[stack]]
+name = "bliep-dev"
+[stack.config]
+server = "Local"
+repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
+branch = "development"
+file_paths = ["compose.yaml"]
+auto_update = true
+environment = """
+BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:development
+BLIEP_OMGEVING = development
+BLIEP_POORT = 8081
+"""
+
+[[stack]]
+name = "bliep-staging"
+[stack.config]
+server = "Local"
+repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
+branch = "staging"
+file_paths = ["compose.yaml"]
+auto_update = true
+environment = """
+BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:staging
+BLIEP_OMGEVING = staging
+BLIEP_POORT = 8082
+"""
+
+[[stack]]
+name = "bliep-prod"
+[stack.config]
+server = "Local"
+repo = "grad-prog-it-trends/H4-bliep-pipeline-demo"
+branch = "main"
+file_paths = ["compose.yaml"]
+auto_update = true
+environment = """
+BLIEP_IMAGE = ghcr.io/grad-prog-it-trends/bliep-web:production
+BLIEP_OMGEVING = productie
+BLIEP_POORT = 8080
+"""
+
+# Standaard kijkt Komodo één keer per dag naar nieuwe images. Voor een demo is dat te traag:
+# deze procedure doet het elke 30 seconden (cron met seconden, zoals Komodo dat verwacht).
+[[procedure]]
+name = "bliep-auto-update"
+description = "Elke 30 seconden: nieuwe images uitrollen, en stacks met gewijzigde bestanden in git opnieuw deployen."
+[procedure.config]
+schedule_format = "Cron"
+schedule = "*/30 * * * * ?"
+schedule_alert = false
+
+[[procedure.config.stage]]
+name = "Nieuwe images"
+executions = [
+  { execution.type = "GlobalAutoUpdate", execution.params = {}, enabled = true },
+]
+
+[[procedure.config.stage]]
+name = "Gewijzigde stacks"
+executions = [
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "bliep-*", enabled = true },
+]
