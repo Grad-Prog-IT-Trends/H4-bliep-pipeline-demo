@@ -12,7 +12,7 @@
 // Constanten schrijven we in HOOFDLETTERS. Met const kan je de waarde
 // daarna niet meer aanpassen.
 const VERZENDKOSTEN = 4.95;
-const GRATIS_VERZENDING_VANAF = 50;
+const GRATIS_VERZENDING_VANAF = 30;
 
 /**
  * Rondt een bedrag af op twee cijfers na de komma, dus op hele centen.
